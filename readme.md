@@ -2,8 +2,8 @@
 This repository serves for the final project of Paul Kry's Physically Based Animation course at McGill University, Winter 2017.
 
 ## Controls
-| Control          | Action                               |
-|------------------|--------------------------------------|
+|Control           | Action                               |
+|:-----------------|:--------------------------------------|
 | Mouse left-click | Add source                           |
 | Mouse right-lick | Delete source                        |
 | Arrow up/down    | Increase/decrease source temperature |
