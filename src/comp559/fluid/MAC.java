@@ -58,16 +58,19 @@ public class MAC {
     public DoubleMatrix A;
 
     /** Incomplete Cholesky factorization of coefficient matrix for pressures */
-    public DoubleMatrix C;
+    public DoubleMatrix IC;
+
+    /** Modified Incomplete Cholesky factorization */
+    public DoubleMatrix MIC;
 
     /** Numerical solver for pressure */
     public int solver = 0;
     String[] solvers = {
             "Gauss-Seidel Relaxation",
-            "Successive Over Relaxation",
+            "Successive Over-Relaxation",
             "Conjugate Gradient",
-            "Preconditioned Incomplete Cholesky",
-            "Preconditioned Modified Incomplete Cholesky (Not Implemented)"
+            "Preconditioned CG: Incomplete Cholesky Factorization",
+            "Preconditioned CG: Modified Incomplete Cholesky (Not Implemented)"
     };
 
     /**
@@ -78,7 +81,9 @@ public class MAC {
      */
     public int IX( int i, int j ) { return i*(N+2) + j; }
 
-    /** Assemble coefficient matrix for pressure solve */
+    /**
+     * Assemble coefficient matrix for pressure solve
+     */
     public void assembleSparseMatrix() {
         A = eye(N*N).mul(4.0f);
         for (int k = 0; k < N*N; k++) {
@@ -93,41 +98,21 @@ public class MAC {
         }
     }
 
-    public void assembleIncompleteCholesky() {
-        C = cholesky(A);
+    /**
+     * Assemble Incomplete Cholesky factorization matrix
+     */
+    public void assembleCholesky() {
+        IC = cholesky(A);
         for (int i = 0; i < N*N; i++) {
             for (int j = 0; j < N*N; j++) {
                 if (A.get(i, j) == 0) {
-                    C.put(i, j, 0f);
+                    IC.put(i, j, 0);
                 }
             }
         }
-        C.muli(C.transpose());
-//        int M = N*N;
-//        C = A.dup();
-//        for (int k = 0; k < M; k++) {
-//            C.put(k, k, (double)Math.sqrt(C.get(k, k)));
-//            for (int i = k+1; i < M; i++) {
-//                if (C.get(i, k) != 0) {
-//                    double a = C.get(i, k) / C.get(k, k);
-//                    C.put(i, k, a);
-//                }
-//            }
-//            for (int j = k+1; j < M; j++) {
-//                for (int i = j; i < M; i++) {
-//                    if (C.get(j, j) != 0) {
-//                        double a = C.get(i, j) - C.get(i, k)*C.get(j, k);
-//                        C.put(i, j, a);
-//                    }
-//                }
-//            }
-//        }
-//        for (int i = 0; i < M; i++) {
-//            for (int j = i+1; j < M; j++) {
-//                C.put(i, j, 0.0f);
-//            }
-//        }
-//        C.muli(C.transpose());
+        IC.muli(IC.transpose());
+
+        // TODO: Implement modified version MIC(0)
     }
 
     /**
@@ -142,9 +127,11 @@ public class MAC {
         U1 = new double[2][np2s];
         temperature0 = new double[np2s];
         temperature1 = new double[np2s];
-        A = zeros(N, N); C = zeros(N, N);
+        A = zeros(N, N);
+        IC = zeros(N, N);
+        MIC = zeros(N, N);
         assembleSparseMatrix();
-        assembleIncompleteCholesky();
+        assembleCholesky();
     }
 
     /**
@@ -187,6 +174,12 @@ public class MAC {
         return val;
     }
 
+    /**
+     * Interpolates velocity field (x-component)
+     * @param x
+     * @param s
+     * @return
+     */
     public double interpolateVelU( Tuple2d x, double[] s ) {
         int i = (int) Math.floor( x.x / dx - 1.0 );
         int j = (int) Math.floor( x.y / dx - 0.5 );
@@ -199,6 +192,9 @@ public class MAC {
         return val;
     }
 
+    /**
+     * Interpolates velocity field (y-component)
+     */
     public double interpolateVelV( Tuple2d x, double[] s ) {
         int i = (int) Math.floor( x.x / dx - 0.5 );
         int j = (int) Math.floor( x.y / dx - 1.0 );
@@ -223,8 +219,6 @@ public class MAC {
 
     /**
      * Performs a simple particle trace using Forward Euler
-     * (Note that this could be something higher order or adative)
-     * x1 = x0 + h * U(x0)
      * @param x0
      * @param U
      * @param h
@@ -238,10 +232,11 @@ public class MAC {
         x1.add( vel );
     }
 
+    /**
+     * Add external forces using mouse
+     */
     private Point2d mouseX1 = new Point2d();
-
     private Point2d mouseX0 = new Point2d();
-
     private void addMouseForce( double[][] U, double dt ) {
         Vector2d f = new Vector2d();
         f.sub( mouseX1, mouseX0 );
@@ -280,6 +275,13 @@ public class MAC {
         addVelV( U[1], dt, x, f.y );
     }
 
+    /**
+     * Adds a force (x-component)
+     * @param S
+     * @param dt
+     * @param x
+     * @param a
+     */
     private void addVelU( double[] S, double dt, Tuple2d x, double a ) {
         int i = (int) Math.floor( x.x / dx - 1.0f );
         int j = (int) Math.floor( x.y / dx - 0.5f );
@@ -291,6 +293,13 @@ public class MAC {
         if ( i+1>=0 && j+1>=0 && i+1<=N+1 && j+1<=N+1 )  S[IX(i+1,j+1)] += wx*wy * dt * a;
     }
 
+    /**
+     * Adds a force (y-component)
+     * @param S
+     * @param dt
+     * @param x
+     * @param a
+     */
     private void addVelV( double[] S, double dt, Tuple2d x, double a ) {
         int i = (int) Math.floor( x.x / dx - 0.5f );
         int j = (int) Math.floor( x.y / dx - 1.0f );
@@ -320,11 +329,11 @@ public class MAC {
         if ( i+1>=0 && j+1>=0 && i+1<=N+1 && j+1<=N+1 )  S[IX(i+1,j+1)] += wx*wy * dt * a;
     }
 
-        /**
-         * Gets the average temperature of the continuum
-         * (use this in computing bouyancy forces)
-         * @return
-         */
+
+    /**
+     * Gets the average temperature of the continuum
+     * @return temp
+     */
     public double getReferenceTemperature() {
         int count = 0;
         double referenceTemperature = 0;
@@ -361,6 +370,13 @@ public class MAC {
         }
     }
 
+    /**
+     * Diffuses velocity field (x-component)
+     * @param x
+     * @param x0
+     * @param diff
+     * @param dt
+     */
     private void diffuseVelU( double[] x, double[] x0, double diff, double dt ) {
         // Diffusion amount
         double a = diff * dt * N * N;
@@ -377,6 +393,13 @@ public class MAC {
         }
     }
 
+    /**
+     * Diffuses velocity field (y-component)
+     * @param x
+     * @param x0
+     * @param diff
+     * @param dt
+     */
     private void diffuseVelV( double[] x, double[] x0, double diff, double dt ) {
         // Diffusion amount
         double a = diff * dt * N * N;
@@ -417,6 +440,13 @@ public class MAC {
         setBounds(d);
     }
 
+    /**
+     * Advects velocity field (x-component)
+     * @param d
+     * @param d0
+     * @param u
+     * @param dt
+     */
     private void advectVelU( double[] d, double[] d0, double[][] u, double dt ) {
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
@@ -434,6 +464,13 @@ public class MAC {
         setBoundsVelU(d);
     }
 
+    /**
+     * Advects velocity field (y-component)
+     * @param d
+     * @param d0
+     * @param u
+     * @param dt
+     */
     private void advectVelV( double[] d, double[] d0, double[][] v, double dt ) {
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
@@ -451,6 +488,10 @@ public class MAC {
         setBoundsVelV(d);
     }
 
+    /**
+     * Reshape vector from stacked-row to stack-column
+     * @param x
+     */
     private void row2col( double[] x ) {
         double[] x0 = x.clone();
         for (int i = 0; i < N; i++) {
@@ -460,6 +501,10 @@ public class MAC {
         }
     }
 
+    /**
+     * Reshape vector from stacked-column to stack-row
+     * @param x
+     */
     private void col2row( double[] x ) {
         double[] x0 = x.clone();
         for (int i = 0; i < N; i++) {
@@ -469,6 +514,12 @@ public class MAC {
         }
     }
 
+    /**
+     * Remove exterior boundary to only deal with inner grid
+     * @param d
+     * @param div
+     * @return
+     */
     private double[] removeBoundary( double[] d, double[] div ) {
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
@@ -518,14 +569,15 @@ public class MAC {
         // Incomplete Cholesky Factorization Preconditioner
         else if (solver == 3) {
             PreconditionedCG pcg = new PreconditionedCG();
-            pcg.init(maxIter, maxError, C);
+            pcg.init(maxIter, maxError, IC);
             linearSolve(pcg, p, div);
         }
         // Modified Incomplete Cholesky MICCG(0) Preconditioner
         else if (solver == 4) {
-//            PreconditionedCG pcg = new PreconditionedCG();
-//            pcg.init(maxIter, maxError, C);
-//            linearSolve(pcg, p, div);
+            // TODO: Implement this
+            PreconditionedCG pcg = new PreconditionedCG();
+            pcg.init(maxIter, maxError, IC);
+            linearSolve(pcg, p, div);
         }
 
         // Update velocities
@@ -568,6 +620,13 @@ public class MAC {
         setBounds(p);
     }
 
+    /**
+     * Successive over-relaxation algorithm
+     * When omega = 1, this is just Gauss-Seidel
+     * @param p
+     * @param div
+     * @param omega
+     */
     private void successiveOverRelaxation( double[] p, double[] div, double omega ) {
         // Get parameters
         final int maxIter = iterations.getValue();
@@ -603,13 +662,20 @@ public class MAC {
         x[IX(N+1,N+1)] = 0.5f * (x[IX(N,   N+1)] + x[IX(N+1,   N)]);
     }
 
+    /**
+     * Sets bound on velocity field by setting velocities to zero at boundaries (x-component)
+     * @param x
+     */
     private void setBoundsVelU( double[] x ) {
         for (int j = 1; j <= N; j++) {
             x[IX(0, j)] = 0.f;
             x[IX(N, j)] = 0.f;
         }
     }
-
+    /**
+     * Sets bound on velocity field by setting velocities to zero at boundaries (y-component)
+     * @param x
+     */
     private void setBoundsVelV( double[] x ) {
         for (int i = 1; i <= N; i++) {
             x[IX(i,0)] = 0.f;
@@ -658,6 +724,7 @@ public class MAC {
         elapsed += dt;
     }
 
+    /** Simulation parameters */
     private DoubleParameter viscosity = new DoubleParameter( "Viscosity", 1e-6, 1e-8, 1 );
     private DoubleParameter diffusion = new DoubleParameter( "Diffusion", 1e-6, 1e-8, 1 );
     private DoubleParameter buoyancy = new DoubleParameter( "Buoyancy", 0.1, -1, 1 );
@@ -665,8 +732,6 @@ public class MAC {
     public DoubleParameter omg = new DoubleParameter( "Omega (SOR only)", 1.5, 0.0, 2.0 );
     private DoubleParameter error = new DoubleParameter( "Error threshold", 1e-6, 1e-10, 1e-1 );
     private DoubleParameter mouseForce = new DoubleParameter( "Mouse force", 1e2, 1, 1e3 );
-
-    /** Step size of the simulation */
     public DoubleParameter stepSize = new DoubleParameter( "Step size", 0.1, 0.001, 1 );
 
     /**

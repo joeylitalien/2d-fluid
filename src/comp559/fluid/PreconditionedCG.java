@@ -2,15 +2,15 @@ package comp559.fluid;
 
 import org.jblas.*;
 import static org.jblas.DoubleMatrix.*;
-import static org.jblas.Geometry.*;
 
 /**
+ * Implementation of a Preconditioned Conjugate Gradient iterative solver for linear systems
+ * Solves Ax = b using a preconditioner matrix
+ *
  * @author litalien
  */
-
 public class PreconditionedCG extends LinearSolver {
-
-    /** Preconditioner */
+    /** Preconditioner matrix */
     public DoubleMatrix precond;
 
     /**

@@ -4,13 +4,12 @@ import org.jblas.*;
 import static org.jblas.DoubleMatrix.*;
 
 /**
- * Implementation of a Conjugate Gradient iterative solver for linear systems
- * Implements standard algorithm
+ * Implementation of a standard Conjugate Gradient iterative solver for linear systems
+ * Solves Ax = b
  *
  * @author litalien
  */
 public class ConjugateGradient extends LinearSolver {
-
     /**
      * Sets algorithm parameters for convergence
      * @param maxIter
