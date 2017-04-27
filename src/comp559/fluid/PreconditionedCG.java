@@ -1,8 +1,8 @@
 package comp559.fluid;
 
 import org.jblas.*;
-import static org.jblas.FloatMatrix.*;
-import static org.jblas.Decompose.*;
+import static org.jblas.DoubleMatrix.*;
+import static org.jblas.Geometry.*;
 
 /**
  * @author litalien
@@ -11,52 +11,50 @@ import static org.jblas.Decompose.*;
 public class PreconditionedCG extends LinearSolver {
 
     /** Preconditioner */
-    public FloatMatrix precond;
+    public DoubleMatrix precond;
 
     /**
      * Sets algorithm parameters for convergence
      * @param maxIter
      * @param maxError
      */
-    public void init( int maxIter, double maxError, FloatMatrix precond ) {
+    public void init( int maxIter, double maxError, DoubleMatrix precond ) {
         this.maxIter = maxIter;
         this.maxError = maxError;
         this.precond = precond;
     }
 
     /**
-     * Conjugate gradient algorithm for Ax = b
-     * Allows for more control over max number of iterations and error tolerance
-     *
+     * Preconditioned conjugate gradient algorithm for Ax = b
      * @param A
      * @param b
      * @return x
      */
-    public void solve( FloatMatrix A, FloatMatrix b, FloatMatrix x ) {
+    public void solve( DoubleMatrix A, DoubleMatrix b, DoubleMatrix x ) {
         // Initialize residual
-        FloatMatrix r = b.sub(A.mmul(x));
-        FloatMatrix z = new FloatMatrix(A.rows, A.columns);
+        DoubleMatrix r = b.sub(A.mmul(x));
         // Apply preconditioner
-        precond.mmuli(r, z);
-        FloatMatrix q = z.dup();
+        DoubleMatrix z = precond.mmul(r);
+        DoubleMatrix q = z.dup();
         // Initialize alpha and beta
-        float alpha = 0.0f, beta = 0.0f;
-        FloatMatrix r2 = zeros(b.length), z2 = zeros(b.length), Aq = zeros(b.length);
+        double alpha, beta;
+        DoubleMatrix r0 = zeros(b.length), z0 = zeros(b.length), Aq = zeros(b.length);
 
         // CG iterate
         while (resNorm2 > maxError || iteration < maxIter) {
             A.mmuli(q, Aq);
             alpha = r.dot(z) / q.dot(Aq);
             x.addi(q.mul(alpha));
-            r.subi(Aq.mul(alpha), r2);
-            resNorm2 = r2.norm2();
+            r.subi(Aq.mul(alpha), r0);
+            // checkForNaN(r0);
+            resNorm2 = r0.norm2();
             if (resNorm2 < maxError) break;
-            precond.mmuli(r2, z2);
-            beta = z2.dot(r2) / z.dot(r);
-            q.addi(q.mul(beta), z2);
-            FloatMatrix tmp = r;
-            r = r2;
-            r2 = tmp;
+            precond.mmuli(r0, z0);
+            beta = z0.dot(r0.sub(r)) / z.dot(r);
+            z0.addi(q.mul(beta), q);
+            DoubleMatrix r1 = r, z1 = z;
+            r = r0; z = z0;
+            r0 = r1; z0 = z1;
             iteration++;
         }
     }

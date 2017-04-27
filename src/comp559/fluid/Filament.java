@@ -7,7 +7,7 @@ import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.GLAutoDrawable;
 import javax.swing.JPanel;
 import javax.swing.border.TitledBorder;
-import javax.vecmath.Point2f;
+import javax.vecmath.Point2d;
 
 import mintools.parameters.DoubleParameter;
 import mintools.parameters.IntParameter;
@@ -18,13 +18,12 @@ import mintools.swing.VerticalFlowPanel;
  * @author kry
  */
 public class Filament {
-    
-    // private Fluid fluid;
+
     private MAC fluid;
     
-    private LinkedList<Point2f> L = new LinkedList<Point2f>();
+    private LinkedList<Point2d> L = new LinkedList<Point2d>();
 
-    private LinkedList<Point2f> Ltmp = new LinkedList<Point2f>();
+    private LinkedList<Point2d> Ltmp = new LinkedList<Point2d>();
 
     private double age = 0;
 
@@ -53,7 +52,7 @@ public class Filament {
         return L.size();
     }
     
-    public LinkedList<Point2f> getPoints() {
+    public LinkedList<Point2d> getPoints() {
     	return L;
     }
     
@@ -63,12 +62,11 @@ public class Filament {
      * 
      * @param h
      */
-    // public Filament( Fluid f, float h) {
-    public Filament( MAC f, float h) {
+    public Filament( MAC f, double h) {
         fluid = f;        
         maxAge = defaultMaxAge.getValue();
         for (int i = 1; i <= fluid.N + 1; i++) {
-            L.add(new Point2f(i * fluid.dx, h));
+            L.add(new Point2d(i * fluid.dx, h));
         }
     }
 
@@ -78,18 +76,18 @@ public class Filament {
 
     public void refineAndAdvect() {
 
-        float dx = fluid.dx;
+        double dx = fluid.dx;
         int N = fluid.N;
-        float dt = fluid.stepSize.getFloatValue();
+        double dt = fluid.stepSize.getValue();
 
         double thresh = refinementThreshold.getValue();
 
         // we'll copy from one list to the next
-        Point2f prev = null;
-        for (Point2f p : L) {
+        Point2d prev = null;
+        for (Point2d p : L) {
             if (prev != null) {
                 if (p.distance(prev) > dx * thresh) {
-                    Point2f h = new Point2f();
+                    Point2d h = new Point2d();
                     h.interpolate(prev, p, 0.5f);
                     Ltmp.add(h);
                 }
@@ -98,14 +96,14 @@ public class Filament {
             prev = p;
         }
         
-        LinkedList<Point2f> tmp = L;
+        LinkedList<Point2d> tmp = L;
         L = Ltmp;
         Ltmp = tmp;
         Ltmp.clear();
 
         // advect step...
-        Point2f x1 = new Point2f();
-        for (Point2f x0 : L) {
+        Point2d x1 = new Point2d();
+        for (Point2d x0 : L) {
             fluid.traceParticle(x0, dt, x1);
             // clamp the particles to the boundaries
             if (x1.x < dx) x1.x = dx;
@@ -125,8 +123,8 @@ public class Filament {
         GL2 gl = drawable.getGL().getGL2();
         gl.glBegin( GL.GL_LINE_STRIP );
         gl.glColor4d(1, 1, 1, age > maxAge ? (1.0 - (age - maxAge) / maxAge) : 1);
-        for (Point2f p : L) {
-            gl.glVertex2f(p.x, p.y);
+        for (Point2d p : L) {
+            gl.glVertex2d(p.x, p.y);
         }
         gl.glEnd();
     }

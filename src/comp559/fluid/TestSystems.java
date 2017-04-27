@@ -7,7 +7,7 @@ import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JPanel;
 import javax.swing.border.TitledBorder;
-import javax.vecmath.Point2f;
+import javax.vecmath.Point2d;
 
 import mintools.swing.VerticalFlowPanel;
 
@@ -19,7 +19,7 @@ public class TestSystems {
     /** Copy of current state of the system */
     public MAC fluid;
     public int N;
-    public float dx;
+    public double dx;
     public List<Source> sources;
 
     /** Test cases names */
@@ -82,27 +82,27 @@ public class TestSystems {
         }
         // Single source
         if ( which == 0 ) {
-            float x = N/2;
-            float y = N/2;
-            Point2f loc = new Point2f((x+1)*dx, (y+1)*dx);
+            double x = N/2;
+            double y = N/2;
+            Point2d loc = new Point2d((x+1)*dx, (y+1)*dx);
             Source s = new Source(loc, 1.0f);
             s.highlight = true;
             fluid.sources.add(0, s);
         }
         if ( which == 1 ) {
-            float x = N/2;
-            float y = N/2;
-            Point2f loc = new Point2f((x+1)*dx, (y+1)*dx);
+            double x = N/2;
+            double y = N/2;
+            Point2d loc = new Point2d((x+1)*dx, (y+1)*dx);
             Source s = new Source(loc, -1.0f);
             s.highlight = true;
             fluid.sources.add(0, s);
         }
         // Opposite source
         else if ( which == 2 ) {
-            float x = 0.75f*N;
-            float y = 0.25f*N;
-            Point2f loc1 = new Point2f((x+1)*dx, (y+1)*dx);
-            Point2f loc2 = new Point2f((y+1)*dx, (x+1)*dx);
+            double x = 0.75f*N;
+            double y = 0.25f*N;
+            Point2d loc1 = new Point2d((x+1)*dx, (y+1)*dx);
+            Point2d loc2 = new Point2d((y+1)*dx, (x+1)*dx);
             Source s1 = new Source(loc1, -1.0f);
             Source s2 = new Source(loc2, 1.0f);
             s1.highlight = true;
@@ -112,12 +112,12 @@ public class TestSystems {
         }
         // Square opposite sources
         else if ( which == 3 ) {
-            float x = 0.75f*N;
-            float y = 0.25f*N;
-            Point2f loc1 = new Point2f((x+1)*dx, (y+1)*dx);
-            Point2f loc2 = new Point2f((y+1)*dx, (x+1)*dx);
-            Point2f loc3 = new Point2f((x+1)*dx, (x+1)*dx);
-            Point2f loc4 = new Point2f((y+1)*dx, (y+1)*dx);
+            double x = 0.75f*N;
+            double y = 0.25f*N;
+            Point2d loc1 = new Point2d((x+1)*dx, (y+1)*dx);
+            Point2d loc2 = new Point2d((y+1)*dx, (x+1)*dx);
+            Point2d loc3 = new Point2d((x+1)*dx, (x+1)*dx);
+            Point2d loc4 = new Point2d((y+1)*dx, (y+1)*dx);
             Source s1 = new Source(loc1, -1.0f);
             Source s2 = new Source(loc2, 1.0f);
             Source s3 = new Source(loc3, 1.0f);
