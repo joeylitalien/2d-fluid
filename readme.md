@@ -1,4 +1,4 @@
-# Poisson Solvers for 2D Fluid Simulation
+# Poisson Solvers for 2D Fluid Simulation in a Box
 This repository serves for the final project of Paul Kry's Physically Based Animation course at McGill University, Winter 2017.
 
 ## Numerical Solvers
