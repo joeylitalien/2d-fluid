@@ -7,6 +7,8 @@ This repository serves for the final project of Paul Kry's Physically Based Anim
 * Conjugate gradient
 * Preconditioned conjugate gradient with incomplete Cholesky factorization
 
+## [Demo](https://www.youtube.com/watch?v=k7yqs8cQV-k)
+
 ## Comparison
 To compare algorithms, first run Gauss-Seidel with a very high number of iterations to establish ground truth for 60 seconds. Then, run the same scene with any solver for the same amount of time. The mean square error is output in the console.
 
