@@ -7,16 +7,16 @@ import java.util.List;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
-import javax.vecmath.Point2d;
-import javax.vecmath.Tuple2d;
-import javax.vecmath.Vector2d;
+import javax.vecmath.Point2f;
+import javax.vecmath.Tuple2f;
+import javax.vecmath.Vector2f;
 
 import mintools.parameters.DoubleParameter;
 import mintools.parameters.IntParameter;
 import mintools.swing.VerticalFlowPanel;
 
 import org.jblas.*;
-import static org.jblas.DoubleMatrix.*;
+import static org.jblas.FloatMatrix.*;
 import static org.jblas.Decompose.*;
 import java.util.Arrays;
 
@@ -29,16 +29,16 @@ public class MAC {
     final static int DIM = 2;
 
     /** Velocity, staggered, packed (first index is the dimension) */
-    public double[][] U0;
+    public float[][] U0;
 
     /** Temporary velocity variable */
-    private double[][] U1;
+    private float[][] U1;
 
     /** Temperature (packed) */
-    public double[] temperature0;
+    public float[] temperature0;
 
     /** Temperature (packed) temporary variable */
-    private double[] temperature1;
+    private float[] temperature1;
 
     private IntParameter Nval = new IntParameter( "MAC Grid size (Reset)", 16, 8, 256 );
 
@@ -46,7 +46,7 @@ public class MAC {
     public int N = 16;
 
     /** Dimension of each grid cell */
-    public double dx = 1;
+    public float dx = 1;
 
     /** Time elapsed in the fluid simulation */
     public double elapsed;
@@ -55,13 +55,13 @@ public class MAC {
     public List<Source> sources = new LinkedList<Source>();
 
     /** Coefficient matrix for pressure solve */
-    public DoubleMatrix A;
+    public FloatMatrix A;
 
     /** Incomplete Cholesky factorization of coefficient matrix for pressures */
-    public DoubleMatrix IC;
+    public FloatMatrix IC;
 
     /** Modified Incomplete Cholesky factorization */
-    public DoubleMatrix MIC;
+    public FloatMatrix MIC;
 
     /** Numerical solver for pressure */
     public int solver = 0;
@@ -69,9 +69,19 @@ public class MAC {
             "Gauss-Seidel Relaxation",
             "Successive Over-Relaxation",
             "Conjugate Gradient",
-            "Preconditioned CG: Incomplete Cholesky Factorization",
-            "Preconditioned CG: Modified Incomplete Cholesky (Not Implemented)"
+            "Incomplete Cholesky Conjugate Gradient",
+            "Modified Incomplete Cholesky Conjugate Gradient (Not Implemented)"
     };
+
+    /** Numerical solver iterations */
+    public int solverIter = 0;
+
+    /** Mean square error */
+    public float solverMSE;
+    public float simTime = 60;
+    public int time = 0;
+    public FloatMatrix groundTruth = new FloatMatrix(N*N, 600);
+    public FloatMatrix solverPressure = zeros(N*N, 600);
 
     /**
      * Compute the index
@@ -120,16 +130,19 @@ public class MAC {
      */
     public void setup() {
         elapsed = 0;
+        time = 0;
         N = Nval.getValue();
         dx = 1.0f / N;
         int np2s = (N+2)*(N+2);
-        U0 = new double[2][np2s];
-        U1 = new double[2][np2s];
-        temperature0 = new double[np2s];
-        temperature1 = new double[np2s];
+        U0 = new float[2][np2s];
+        U1 = new float[2][np2s];
+        temperature0 = new float[np2s];
+        temperature1 = new float[np2s];
+        solverIter = 0;
         A = zeros(N, N);
         IC = zeros(N, N);
         MIC = zeros(N, N);
+        solverMSE = 0;
         assembleSparseMatrix();
         assembleCholesky();
     }
@@ -139,7 +152,7 @@ public class MAC {
      * @param x
      * @param vel
      */
-    public void getVelocity( Tuple2d x, Tuple2d vel ) {
+    public void getVelocity( Tuple2f x, Tuple2f vel ) {
         getVelocity( x, U0, vel );
     }
 
@@ -149,7 +162,7 @@ public class MAC {
      * @param U
      * @param vel
      */
-    private void getVelocity( Tuple2d x, double[][] U, Tuple2d vel ) {
+    private void getVelocity( Tuple2f x, float[][] U, Tuple2f vel ) {
         vel.x = interpolateVelU( x, U[0] );
         vel.y = interpolateVelV( x, U[1] );
     }
@@ -160,14 +173,14 @@ public class MAC {
      * @param s
      * @return interpolated value
      */
-    public double interpolate( Tuple2d x, double[] s ) {
+    public float interpolate( Tuple2f x, float[] s ) {
         int i,j;
-        double wx, wy;
+        float wx, wy;
         i = (int) Math.floor( x.x / dx - 0.5 );
         j = (int) Math.floor( x.y / dx - 0.5 );
         wx = x.x / dx - 0.5f - i;
         wy = x.y / dx - 0.5f - j;
-        double val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
+        float val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
                 ( (i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )     ? s[IX(i+1,j)]*wx*(1-wy) : 0 ) +
                 ( (i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )     ? s[IX(i,j+1)]*(1-wx)*wy : 0 ) +
                 ( (i+1>=0 && j+1>=0 && i+1<=N+1 && j+1<=N+1 ) ? s[IX(i+1,j+1)]*wx*wy : 0 );
@@ -180,12 +193,12 @@ public class MAC {
      * @param s
      * @return
      */
-    public double interpolateVelU( Tuple2d x, double[] s ) {
+    public float interpolateVelU( Tuple2f x, float[] s ) {
         int i = (int) Math.floor( x.x / dx - 1.0 );
         int j = (int) Math.floor( x.y / dx - 0.5 );
-        double wx = x.x / dx - 1.0f - i;
-        double wy = x.y / dx - 0.5f - j;
-        double val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
+        float wx = x.x / dx - 1.0f - i;
+        float wy = x.y / dx - 0.5f - j;
+        float val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
                 ( (i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )     ? s[IX(i+1,j)]*wx*(1-wy) : 0 ) +
                 ( (i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )     ? s[IX(i,j+1)]*(1-wx)*wy : 0 ) +
                 ( (i+1>=0 && j+1>=0 && i+1<=N+1 && j+1<=N+1 ) ? s[IX(i+1,j+1)]*wx*wy : 0 );
@@ -195,12 +208,12 @@ public class MAC {
     /**
      * Interpolates velocity field (y-component)
      */
-    public double interpolateVelV( Tuple2d x, double[] s ) {
+    public float interpolateVelV( Tuple2f x, float[] s ) {
         int i = (int) Math.floor( x.x / dx - 0.5 );
         int j = (int) Math.floor( x.y / dx - 1.0 );
-        double wx = x.x / dx - 0.5f - i;
-        double wy = x.y / dx - 1.0f - j;
-        double val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
+        float wx = x.x / dx - 0.5f - i;
+        float wy = x.y / dx - 1.0f - j;
+        float val = ( (i>=0 && j>=0 && i<=N+1 && j<=N+1 )     ? s[IX(i,j)]*(1-wx)*(1-wy) : 0 ) +
                 ( (i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )     ? s[IX(i+1,j)]*wx*(1-wy) : 0 ) +
                 ( (i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )     ? s[IX(i,j+1)]*(1-wx)*wy : 0 ) +
                 ( (i+1>=0 && j+1>=0 && i+1<=N+1 && j+1<=N+1 ) ? s[IX(i+1,j+1)]*wx*wy : 0 );
@@ -213,7 +226,7 @@ public class MAC {
      * @param h
      * @param x1
      */
-    public void traceParticle( Point2d x0, double h, Point2d x1 ) {
+    public void traceParticle( Point2f x0, float h, Point2f x1 ) {
         traceParticle( x0, U0, h, x1 );
     }
 
@@ -224,8 +237,8 @@ public class MAC {
      * @param h
      * @param x1
      */
-    private void traceParticle( Point2d x0, double[][] U, double h, Point2d x1 ) {
-        Vector2d vel = new Vector2d();
+    private void traceParticle( Point2f x0, float[][] U, float h, Point2f x1 ) {
+        Vector2f vel = new Vector2f();
         x1.set( x0 );
         getVelocity(x1, U, vel);
         vel.scale(h);
@@ -235,19 +248,19 @@ public class MAC {
     /**
      * Add external forces using mouse
      */
-    private Point2d mouseX1 = new Point2d();
-    private Point2d mouseX0 = new Point2d();
-    private void addMouseForce( double[][] U, double dt ) {
-        Vector2d f = new Vector2d();
+    private Point2f mouseX1 = new Point2f();
+    private Point2f mouseX0 = new Point2f();
+    private void addMouseForce( float[][] U, float dt ) {
+        Vector2f f = new Vector2f();
         f.sub( mouseX1, mouseX0 );
-        double d = mouseX0.distance(mouseX1);
+        float d = mouseX0.distance(mouseX1);
         if ( d < 1e-6 ) return;
-        f.scale( mouseForce.getValue() );
+        f.scale( mouseForce.getFloatValue() );
         // go along the path of the mouse!
-        Point2d x = new Point2d();
+        Point2f x = new Point2f();
         int num = (int) (d/dx + 1);
         for ( int i = 0; i <= num; i++ ) {
-            x.interpolate(mouseX0, mouseX1,(double)i / num );
+            x.interpolate(mouseX0, mouseX1,(float)i / num );
             addForce( U, dt, x, f );
         }
         mouseX0.set( mouseX1 );
@@ -258,7 +271,7 @@ public class MAC {
      * @param x0 previous location
      * @param x1 current location
      */
-    public void setMouseMotionPos( Point2d x0, Point2d x1 ) {
+    public void setMouseMotionPos( Point2f x0, Point2f x1 ) {
         mouseX0.set( x0 );
         mouseX1.set( x1 );
     }
@@ -270,7 +283,7 @@ public class MAC {
      * @param x    location
      * @param f    force
      */
-    private void addForce( double[][] U, double dt, Tuple2d x, Tuple2d f ) {
+    private void addForce( float[][] U, float dt, Tuple2f x, Tuple2f f ) {
         addVelU( U[0], dt, x, f.x );
         addVelV( U[1], dt, x, f.y );
     }
@@ -282,11 +295,11 @@ public class MAC {
      * @param x
      * @param a
      */
-    private void addVelU( double[] S, double dt, Tuple2d x, double a ) {
+    private void addVelU( float[] S, float dt, Tuple2f x, float a ) {
         int i = (int) Math.floor( x.x / dx - 1.0f );
         int j = (int) Math.floor( x.y / dx - 0.5f );
-        double wx = x.x / dx - 1.0f - i;
-        double wy = x.y / dx - 0.5f - j;
+        float wx = x.x / dx - 1.0f - i;
+        float wy = x.y / dx - 0.5f - j;
         if ( i>=0 && j>=0 && i<=N+1 && j<=N+1 )          S[IX(i,j)]     += (1-wx)*(1-wy)* dt * a;
         if ( i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )      S[IX(i+1,j)]   += wx*(1-wy) * dt * a;
         if ( i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )      S[IX(i,j+1)]   += (1-wx)*wy * dt * a;
@@ -300,11 +313,11 @@ public class MAC {
      * @param x
      * @param a
      */
-    private void addVelV( double[] S, double dt, Tuple2d x, double a ) {
+    private void addVelV( float[] S, float dt, Tuple2f x, float a ) {
         int i = (int) Math.floor( x.x / dx - 0.5f );
         int j = (int) Math.floor( x.y / dx - 1.0f );
-        double wx = x.x / dx - 0.5f - i;
-        double wy = x.y / dx - 1.0f - j;
+        float wx = x.x / dx - 0.5f - i;
+        float wy = x.y / dx - 1.0f - j;
         if ( i>=0 && j>=0 && i<=N+1 && j<=N+1 )          S[IX(i,j)]     += (1-wx)*(1-wy)* dt * a;
         if ( i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )      S[IX(i+1,j)]   += wx*(1-wy) * dt * a;
         if ( i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )      S[IX(i,j+1)]   += (1-wx)*wy * dt * a;
@@ -318,11 +331,11 @@ public class MAC {
      * @param x    location
      * @param a    amount
      */
-    private void addSource( double[] S, double dt, Tuple2d x, double a ) {
+    private void addSource( float[] S, float dt, Tuple2f x, float a ) {
         int i = (int) Math.floor( x.x / dx - 0.5f );
         int j = (int) Math.floor( x.y / dx - 0.5f );
-        double wx = x.x / dx - 0.5f - i;
-        double wy = x.y / dx - 0.5f - j;
+        float wx = x.x / dx - 0.5f - i;
+        float wy = x.y / dx - 0.5f - j;
         if ( i>=0 && j>=0 && i<=N+1 && j<=N+1 )          S[IX(i,j)]     += (1-wx)*(1-wy)* dt * a;
         if ( i+1>=0 && j>=0 && i+1<=N+1 && j<=N+1 )      S[IX(i+1,j)]   += wx*(1-wy) * dt * a;
         if ( i>=0 && j+1>=0 && i<=N+1 && j+1<=N+1 )      S[IX(i,j+1)]   += (1-wx)*wy * dt * a;
@@ -354,9 +367,9 @@ public class MAC {
      * @param x0    old density field
      * @param dt    time step
      */
-    private void diffuse( int b, double[] x, double[] x0, double diff, double dt ) {
+    private void diffuse( int b, float[] x, float[] x0, float diff, float dt ) {
         // Diffusion amount
-        double a = diff * dt * N * N;
+        float a = diff * dt * N * N;
         // Get number of iterations to use
         final int nIter = iterations.getValue();
         // Diffuse grid
@@ -377,9 +390,9 @@ public class MAC {
      * @param diff
      * @param dt
      */
-    private void diffuseVelU( double[] x, double[] x0, double diff, double dt ) {
+    private void diffuseVelU( float[] x, float[] x0, float diff, float dt ) {
         // Diffusion amount
-        double a = diff * dt * N * N;
+        float a = diff * dt * N * N;
         // Get number of iterations to use
         final int nIter = iterations.getValue();
         // Diffuse grid
@@ -400,9 +413,9 @@ public class MAC {
      * @param diff
      * @param dt
      */
-    private void diffuseVelV( double[] x, double[] x0, double diff, double dt ) {
+    private void diffuseVelV( float[] x, float[] x0, float diff, float dt ) {
         // Diffusion amount
-        double a = diff * dt * N * N;
+        float a = diff * dt * N * N;
         // Get number of iterations to use
         final int nIter = iterations.getValue();
         // Diffuse grid
@@ -423,14 +436,14 @@ public class MAC {
      * @param d0    old scalar field
      * @param dt    time step
      */
-    private void advect( int b, double[] d, double [] d0, double[][] v, double dt ) {
+    private void advect( int b, float[] d, float [] d0, float[][] v, float dt ) {
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
                 // Get center of cell
-                double x = (i + 0.5f) * dx;
-                double y = (j + 0.5f) * dx;
-                Point2d x0 = new Point2d(x, y);
-                Point2d x1 = new Point2d();
+                float x = (i + 0.5f) * dx;
+                float y = (j + 0.5f) * dx;
+                Point2f x0 = new Point2f(x, y);
+                Point2f x1 = new Point2f();
                 // Trace backward using Forward-Euler with negative time step
                 // Interpolate pressure
                 traceParticle(x0, v, -dt, x1);
@@ -447,14 +460,14 @@ public class MAC {
      * @param u
      * @param dt
      */
-    private void advectVelU( double[] d, double[] d0, double[][] u, double dt ) {
+    private void advectVelU( float[] d, float[] d0, float[][] u, float dt ) {
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
                 // Get u component
-                double x = (i + 1.0f) * dx;
-                double y = (j + 0.5f) * dx;
-                Point2d x0 = new Point2d(x, y);
-                Point2d x1 = new Point2d();
+                float x = (i + 1.0f) * dx;
+                float y = (j + 0.5f) * dx;
+                Point2f x0 = new Point2f(x, y);
+                Point2f x1 = new Point2f();
                 // Trace backward using Forward-Euler with negative time step
                 // Interpolate velocity u
                 traceParticle(x0, u, -dt, x1);
@@ -471,14 +484,14 @@ public class MAC {
      * @param u
      * @param dt
      */
-    private void advectVelV( double[] d, double[] d0, double[][] v, double dt ) {
+    private void advectVelV( float[] d, float[] d0, float[][] v, float dt ) {
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
                 // Get v component
-                double x = (i + 0.5f) * dx;
-                double y = (j + 1.0f) * dx;
-                Point2d x0 = new Point2d(x, y);
-                Point2d x1 = new Point2d();
+                float x = (i + 0.5f) * dx;
+                float y = (j + 1.0f) * dx;
+                Point2f x0 = new Point2f(x, y);
+                Point2f x1 = new Point2f();
                 // Trace backward using Forward-Euler with negative time step
                 // Interpolate velocity v
                 traceParticle(x0, v, -dt, x1);
@@ -492,8 +505,8 @@ public class MAC {
      * Reshape vector from stacked-row to stack-column
      * @param x
      */
-    private void row2col( double[] x ) {
-        double[] x0 = x.clone();
+    private void row2col( float[] x ) {
+        float[] x0 = x.clone();
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
                 x[i*N + j] = x0[i + j*N];
@@ -505,8 +518,8 @@ public class MAC {
      * Reshape vector from stacked-column to stack-row
      * @param x
      */
-    private void col2row( double[] x ) {
-        double[] x0 = x.clone();
+    private void col2row( float[] x ) {
+        float[] x0 = x.clone();
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
                 x[i + j*N] = x0[i*N + j];
@@ -520,7 +533,7 @@ public class MAC {
      * @param div
      * @return
      */
-    private double[] removeBoundary( double[] d, double[] div ) {
+    private float[] removeBoundary( float[] d, float[] div ) {
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
                 d[i*N + j] = div[(i+1)*(N+2) + (j+1)];
@@ -536,7 +549,7 @@ public class MAC {
      * @param p     pressure
      * @param div   divergence
      */
-    private void poissonSolve( double[] u, double[] v, double[] p, double[] div ) {
+    private void poissonSolve( float[] u, float[] v, float[] p, float[] div ) {
         // Update divergences
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
@@ -549,28 +562,40 @@ public class MAC {
 
         // Solve for pressures...
         final int maxIter = iterations.getValue();
-        final double maxError = error.getValue();
+        final float maxError = error.getFloatValue();
 
         // Gauss-Seidel relaxation
         if (solver == 0) {
             successiveOverRelaxation(p, div, 1);
+            solverIter = iterations.getValue();
+            if (time < 600) {
+                FloatMatrix P = new FloatMatrix(p);
+                groundTruth.putColumn(time, P);
+            }
         }
         // Successive Over Relaxation (SOR)
         if (solver == 1) {
-            double omega = omg.getValue();
+            float omega = omg.getFloatValue();
             successiveOverRelaxation(p, div, omega);
+            solverIter = iterations.getValue();
+            if (time < 600) {
+                FloatMatrix P = new FloatMatrix(p);
+                groundTruth.putColumn(time, P);
+            }
         }
         // Conjugate Gradient
         else if (solver == 2) {
             ConjugateGradient cg = new ConjugateGradient();
             cg.init(maxIter, maxError);
             linearSolve(cg, p, div);
+            solverIter = cg.iteration;
         }
         // Incomplete Cholesky Factorization Preconditioner
         else if (solver == 3) {
             PreconditionedCG pcg = new PreconditionedCG();
             pcg.init(maxIter, maxError, IC);
             linearSolve(pcg, p, div);
+            solverIter = pcg.iteration;
         }
         // Modified Incomplete Cholesky MICCG(0) Preconditioner
         else if (solver == 4) {
@@ -597,20 +622,25 @@ public class MAC {
      * @param p     unknown pressures
      * @param div   divergences
      * */
-    private void linearSolve( LinearSolver solver, double[] p, double[] div ) {
+    private void linearSolve( LinearSolver solver, float[] p, float[] div ) {
         // Remove boundaries since we only want to solve for inner grid
-        double[] d = new double[N*N];
+        float[] d = new float[N*N];
         removeBoundary(d, div);
         // Put in column-wise format
         row2col(d);
         // Solver Ax = d
-        DoubleMatrix b = new DoubleMatrix(d); b.transpose();
-        DoubleMatrix x = new DoubleMatrix(N*N);
+        FloatMatrix b = new FloatMatrix(d); b.transpose();
+        FloatMatrix x = new FloatMatrix(N*N);
         solver.solve(A, b, x);
         // Convert back to array type
-        double[] p0 = x.toArray();
+        float[] p0 = x.toArray();
         // Reshape back to row-wise format
         col2row(p0);
+        // Store into matrix for MSE
+        if (time < 600) {
+            FloatMatrix P = new FloatMatrix(p0);
+            solverPressure.putColumn(time, P);
+        }
         // Update pressures
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
@@ -627,7 +657,7 @@ public class MAC {
      * @param div
      * @param omega
      */
-    private void successiveOverRelaxation( double[] p, double[] div, double omega ) {
+    private void successiveOverRelaxation( float[] p, float[] div, float omega ) {
         // Get parameters
         final int maxIter = iterations.getValue();
         // Launch numerical solver
@@ -647,7 +677,7 @@ public class MAC {
      * @param b     bound
      * @param x     scalar field
      */
-    private void setBounds( double[] x ) {
+    private void setBounds( float[] x ) {
         // Cancel scalar field at the boundaries
         for (int i = 1; i <= N; i++) {
             x[IX(0,   i)] = x[IX(1, i)];
@@ -666,7 +696,7 @@ public class MAC {
      * Sets bound on velocity field by setting velocities to zero at boundaries (x-component)
      * @param x
      */
-    private void setBoundsVelU( double[] x ) {
+    private void setBoundsVelU( float[] x ) {
         for (int j = 1; j <= N; j++) {
             x[IX(0, j)] = 0.f;
             x[IX(N, j)] = 0.f;
@@ -676,7 +706,7 @@ public class MAC {
      * Sets bound on velocity field by setting velocities to zero at boundaries (y-component)
      * @param x
      */
-    private void setBoundsVelV( double[] x ) {
+    private void setBoundsVelV( float[] x ) {
         for (int i = 1; i <= N; i++) {
             x[IX(i,0)] = 0.f;
             x[IX(i, N)] = 0.f;
@@ -687,7 +717,7 @@ public class MAC {
      * Advances the state of the fluid by one time step
      */
     public void step() {
-        double dt = stepSize.getValue();
+        float dt = stepSize.getFloatValue();
 
         addMouseForce(U0, dt);
 
@@ -697,17 +727,17 @@ public class MAC {
         }
 
         // Use temperature scalar field to apply buoyancy forces to the velocity field
-        double buoyancyF = buoyancy.getValue();
-        double refT = (double) getReferenceTemperature();
+        float buoyancyF = buoyancy.getFloatValue();
+        float refT = (float) getReferenceTemperature();
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
-                double deltaT = refT - temperature0[IX(i, j)];
+                float deltaT = refT - temperature0[IX(i, j)];
                 U0[1][IX(i, j)] += buoyancyF * deltaT * dt;
             }
         }
 
         // Perform velocity step
-        double visc = viscosity.getValue();
+        float visc = viscosity.getFloatValue();
         diffuseVelU(U1[0], U0[0], visc, dt);
         diffuseVelV(U1[1], U0[1], visc, dt);
         poissonSolve(U1[0], U1[1], U0[0], U0[1]);
@@ -716,20 +746,33 @@ public class MAC {
         poissonSolve(U0[0], U0[1], U1[0], U1[1]);
 
         // Perform scalar (density) step
-        double diff = diffusion.getValue();
+        float diff = diffusion.getFloatValue();
         diffuse(0, temperature1, temperature0, diff, dt);
         advect(0, temperature0, temperature1, U0, dt);
 
         // Step forward in time
         elapsed += dt;
+        time++;
+
+        // Compute MSE
+        if (time == 600 && solver != 0) {
+            float norm = 0;
+            int timeDomain = 600;
+            for (int j = 0; j < timeDomain; j++) {
+                FloatMatrix m = groundTruth.getColumn(j).sub(solverPressure.getColumn(j));
+                norm += m.norm2();
+            }
+            solverMSE = norm / timeDomain;
+            System.out.println("MSE = " + solverMSE);
+        }
     }
 
     /** Simulation parameters */
     private DoubleParameter viscosity = new DoubleParameter( "Viscosity", 1e-6, 1e-8, 1 );
     private DoubleParameter diffusion = new DoubleParameter( "Diffusion", 1e-6, 1e-8, 1 );
     private DoubleParameter buoyancy = new DoubleParameter( "Buoyancy", 0.1, -1, 1 );
-    private IntParameter iterations = new IntParameter( "Number of iterations", 30, 20, 200 );
-    public DoubleParameter omg = new DoubleParameter( "Omega (SOR only)", 1.5, 0.0, 2.0 );
+    private IntParameter iterations = new IntParameter( "Number of iterations", 30, 1, 1000 );
+    public DoubleParameter omg = new DoubleParameter( "Over-relaxation", 1.5, 0.0, 2.0 );
     private DoubleParameter error = new DoubleParameter( "Error threshold", 1e-6, 1e-10, 1e-1 );
     private DoubleParameter mouseForce = new DoubleParameter( "Mouse force", 1e2, 1, 1e3 );
     public DoubleParameter stepSize = new DoubleParameter( "Step size", 0.1, 0.001, 1 );

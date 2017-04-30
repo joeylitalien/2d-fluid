@@ -1,7 +1,7 @@
 package comp559.fluid;
 
 import org.jblas.*;
-import static org.jblas.DoubleMatrix.*;
+import static org.jblas.FloatMatrix.*;
 
 /**
  * Implementation of a standard Conjugate Gradient iterative solver for linear systems
@@ -15,7 +15,8 @@ public class ConjugateGradient extends LinearSolver {
      * @param maxIter
      * @param maxError
      */
-    public void init( int maxIter, double maxError ) {
+    public void init( int maxIter, float maxError ) {
+        this.convergence = 0;
         this.maxIter = maxIter;
         this.maxError = maxError;
     }
@@ -26,13 +27,13 @@ public class ConjugateGradient extends LinearSolver {
      * @param b
      * @return x
      */
-    public void solve( DoubleMatrix A, DoubleMatrix b, DoubleMatrix x ) {
+    public void solve( FloatMatrix A, FloatMatrix b, FloatMatrix x ) {
         // Initialize residual
-        DoubleMatrix r = b.sub(A.mmul(x));
-        DoubleMatrix q = r.dup();
+        FloatMatrix r = b.sub(A.mmul(x));
+        FloatMatrix q = r.dup();
         // Initialize alpha and beta
-        double alpha, beta;
-        DoubleMatrix r0 = zeros(b.length), Aq = zeros(b.length);
+        float alpha, beta;
+        FloatMatrix r0 = zeros(b.length), Aq = zeros(b.length);
         // CG iterate
         while (resNorm2 > maxError || iteration < maxIter) {
             A.mmuli(q, Aq);
@@ -40,13 +41,17 @@ public class ConjugateGradient extends LinearSolver {
             x.addi(q.mul(alpha));
             r.subi(Aq.mul(alpha), r0);
             resNorm2 = r0.norm2();
-            if (resNorm2 < maxError) break;
+            if (resNorm2 < maxError) {
+                convergence = iteration;
+                break;
+            }
             beta = r0.dot(r0) / r.dot(r);
             r0.addi(q.mul(beta), q);
-            DoubleMatrix tmp = r;
+            FloatMatrix tmp = r;
             r = r0;
             r0 = tmp;
             ++iteration;
         }
+        convergence = iteration;
     }
 }

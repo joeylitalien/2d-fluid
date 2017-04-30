@@ -1,6 +1,6 @@
 package comp559.fluid;
 
-import org.jblas.DoubleMatrix;
+import org.jblas.FloatMatrix;
 
 /**
  * @author litalien
@@ -14,16 +14,20 @@ public abstract class LinearSolver {
     public int maxIter;
 
     /** Norm squared of residual r = Ax - b */
-    public double resNorm2;
+    public Float resNorm2;
 
     /** Max error for algorithm */
-    public double maxError;
+    public Float maxError;
+
+    /** Convergence */
+    public int convergence;
 
     /** Default constructor */
     public LinearSolver() {
         this.iteration = 0;
-        this.resNorm2 = Double.NaN;
+        this.resNorm2 = Float.NaN;
+        this.convergence = 0;
     }
 
-    public abstract void solve( DoubleMatrix A, DoubleMatrix b, DoubleMatrix x );
+    public abstract void solve( FloatMatrix A, FloatMatrix b, FloatMatrix x );
 }

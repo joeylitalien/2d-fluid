@@ -1,6 +1,6 @@
 package comp559.fluid;
 
-import javax.vecmath.Point2d;
+import javax.vecmath.Point2f;
 
 /**
  * Heating or cooling source in the fluid
@@ -10,10 +10,10 @@ import javax.vecmath.Point2d;
 public class Source {
     
     /** position of the heat source */
-    Point2d location = new Point2d();
+    Point2f location = new Point2f();
     
     /** heating or cooling rate */
-    public double amount = 0;
+    public float amount = 0;
     
     /** flag to denote that the mouse is over the source */
     boolean highlight = false;
@@ -23,7 +23,7 @@ public class Source {
      * @param p
      * @param a
      */
-    public Source( Point2d p, double a ) {
+    public Source( Point2f p, float a ) {
         location.set(p);
         amount = a;
         highlight = false;

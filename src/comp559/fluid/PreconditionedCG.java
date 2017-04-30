@@ -1,7 +1,7 @@
 package comp559.fluid;
 
 import org.jblas.*;
-import static org.jblas.DoubleMatrix.*;
+import static org.jblas.FloatMatrix.*;
 
 /**
  * Implementation of a Preconditioned Conjugate Gradient iterative solver for linear systems
@@ -11,14 +11,15 @@ import static org.jblas.DoubleMatrix.*;
  */
 public class PreconditionedCG extends LinearSolver {
     /** Preconditioner matrix */
-    public DoubleMatrix precond;
+    public FloatMatrix precond;
 
     /**
      * Sets algorithm parameters for convergence
      * @param maxIter
      * @param maxError
      */
-    public void init( int maxIter, double maxError, DoubleMatrix precond ) {
+    public void init( int maxIter, float maxError, FloatMatrix precond ) {
+        this.convergence = 0;
         this.maxIter = maxIter;
         this.maxError = maxError;
         this.precond = precond;
@@ -30,15 +31,15 @@ public class PreconditionedCG extends LinearSolver {
      * @param b
      * @return x
      */
-    public void solve( DoubleMatrix A, DoubleMatrix b, DoubleMatrix x ) {
+    public void solve( FloatMatrix A, FloatMatrix b, FloatMatrix x ) {
         // Initialize residual
-        DoubleMatrix r = b.sub(A.mmul(x));
+        FloatMatrix r = b.sub(A.mmul(x));
         // Apply preconditioner
-        DoubleMatrix z = precond.mmul(r);
-        DoubleMatrix q = z.dup();
+        FloatMatrix z = precond.mmul(r);
+        FloatMatrix q = z.dup();
         // Initialize alpha and beta
-        double alpha, beta;
-        DoubleMatrix r0 = zeros(b.length), z0 = zeros(b.length), Aq = zeros(b.length);
+        float alpha, beta;
+        FloatMatrix r0 = zeros(b.length), z0 = zeros(b.length), Aq = zeros(b.length);
 
         // CG iterate
         while (resNorm2 > maxError || iteration < maxIter) {
@@ -48,14 +49,18 @@ public class PreconditionedCG extends LinearSolver {
             r.subi(Aq.mul(alpha), r0);
             // checkForNaN(r0);
             resNorm2 = r0.norm2();
-            if (resNorm2 < maxError) break;
+            if (resNorm2 < maxError) {
+                convergence = iteration;
+                break;
+            }
             precond.mmuli(r0, z0);
             beta = z0.dot(r0.sub(r)) / z.dot(r);
             z0.addi(q.mul(beta), q);
-            DoubleMatrix r1 = r, z1 = z;
+            FloatMatrix r1 = r, z1 = z;
             r = r0; z = z0;
             r0 = r1; z0 = z1;
             iteration++;
         }
+        convergence = iteration;
     }
 }
